@@ -1,80 +1,46 @@
 #!/usr/bin/env bash
-# Points CODEX_HOME/config.toml at the Bifrost Cerebras profile without
-# destroying your current codex config.
+# Manage Codex's config for the Bifrost Cerebras profile.
 #
-#   - Backs up the existing config.toml to config.toml.bak-<timestamp> (in place,
-#     only if config.toml is a regular file)
-#   - Writes cerebras.config.toml (idempotent - never clobbers an existing one)
-#   - Symlinks config.toml -> cerebras.config.toml
+#   setup    (default) save the existing config.toml as default.config.toml,
+#                      write cerebras.config.toml, symlink config.toml to it
+#   default  symlink config.toml back to default.config.toml
+#   status   print config state (always exits 0)
 #
-# Usage:
-#   ./scripts/codex-setup.sh                  # uses default $HOME/.codex
-#   CODEX_HOME=/path/to/other ./scripts/codex-setup.sh
-#
-#   ./scripts/codex-setup.sh switch-default   # point config.toml back at the
-#                                             # saved default (and remove the
-#                                             # cerebras config)
-#
-# Optional env:
-#   BIFROST_BASE_URL  default http://127.0.0.1:8080/v1
-#   CODEX_MODEL       default cerebras/qwen-3.8-27b
+# CODEX_HOME defaults to ~/.codex
 set -euo pipefail
 
 CODEX_HOME="${CODEX_HOME:-${HOME}/.codex}"
 CONFIG="${CODEX_HOME}/config.toml"
+DEFAULT_CFG="${CODEX_HOME}/default.config.toml"
 PROFILE="${CODEX_HOME}/cerebras.config.toml"
 BASE_URL="${BIFROST_BASE_URL:-http://127.0.0.1:8080/v1}"
 MODEL="${CODEX_MODEL:-cerebras/qwen-3.8-27b}"
 
-mkdir -p "${CODEX_HOME}"
+die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
-case "${1:-}" in
-  switch-default)
-    if [[ -L "${CONFIG}" ]]; then
-      target="$(readlink "${CONFIG}")"
-      if [[ "$(basename "${target}")" == "cerebras.config.toml" ]]; then
-        bak=""
-        for f in "${CODEX_HOME}"/config.toml.bak-*; do [[ -f "${f}" ]] && bak="${f}"; done
-        if [[ -n "${bak}" ]]; then
-          rm "${CONFIG}"
-          cp "${bak}" "${CONFIG}"
-          echo "Restored ${CONFIG} from ${bak}"
-        else
-          echo "No config.toml.bak-* backup found in ${CODEX_HOME}; nothing to restore." >&2
-          exit 1
-        fi
-      else
-        echo "config.toml is a symlink to ${target} (not the cerebras profile); leaving it alone." >&2
-        exit 1
-      fi
-    else
-      echo "config.toml is not a symlink; nothing to switch." >&2
-      exit 1
+cmd_setup() {
+  mkdir -p "${CODEX_HOME}"
+
+  if [[ -L "${CONFIG}" ]]; then
+    case "$(basename "$(readlink "${CONFIG}")")" in
+      cerebras.config.toml) echo "config.toml already points at the cerebras profile" ;;
+      default.config.toml)  echo "config.toml points at saved default; re-pointing to cerebras" ;;
+      *) die "config.toml is a symlink to '$(basename "$(readlink "${CONFIG}")")', not managed by these scripts. Move or rename it, then re-run" ;;
+    esac
+  elif [[ -e "${CONFIG}" ]]; then
+    [[ -f "${CONFIG}" ]] || die "config.toml exists but is not a regular file; inspect ${CODEX_HOME}, then re-run"
+    if [[ -e "${DEFAULT_CFG}" ]]; then
+      die "config.toml is a regular file and ${DEFAULT_CFG} already exists. Refusing to overwrite the saved default - rename one of them, then re-run"
     fi
-    # remove the profile (optional; keeps CODEX_HOME tidy)
-    rm -f "${PROFILE}"
-    echo "Switched Codex back to the saved default config."
-    exit 0
-    ;;
-  "") ;;
-  *) echo "usage: $0 [switch-default]" >&2; exit 2 ;;
-esac
+    mv "${CONFIG}" "${DEFAULT_CFG}"
+    echo "saved existing config: config.toml -> default.config.toml"
+  fi
 
-# 1. Back up existing config (regular file only; skip symlinks/dirs)
-if [[ -e "${CONFIG}" && ! -L "${CONFIG}" && -f "${CONFIG}" ]]; then
-  ts="$(date +%Y%m%d-%H%M%S)"
-  cp -a "${CONFIG}" "${CONFIG}.bak-${ts}"
-  echo "Backed up ${CONFIG} -> ${CONFIG}.bak-${ts}"
-elif [[ -L "${CONFIG}" ]]; then
-  echo "config.toml is already a symlink -> $(readlink "${CONFIG}"); no backup taken."
-fi
-
-# 2. Write profile (never overwrite an existing one)
-if [[ -e "${PROFILE}" ]]; then
-  echo "Profile already exists at ${PROFILE}; leaving it unchanged."
-else
-  cat > "${PROFILE}" <<TOML
-# Codex via BiFrost -> Cerebras
+  if [[ -e "${PROFILE}" ]]; then
+    echo "profile already exists: ${PROFILE} (left unchanged)"
+  else
+    cat > "${PROFILE}" <<TOML
+# Codex via Bifrost -> Cerebras
 model = "${MODEL}"
 model_provider = "bifrost"
 model_context_window = 131072
@@ -87,11 +53,64 @@ requires_openai_auth = false
 experimental_bearer_token = "unused"
 http_headers = { "x-bf-store-raw-request-response" = "true" }
 TOML
-  echo "Wrote ${PROFILE}"
-fi
+    echo "wrote ${PROFILE}"
+  fi
 
-# 3. Symlink in place
-ln -sfn cerebras.config.toml "${CONFIG}"
-echo "Linked ${CONFIG} -> cerebras.config.toml"
-echo
-echo "Done. Test with:  codex \"say hi\""
+  ln -sfn cerebras.config.toml "${CONFIG}"
+  echo "linked config.toml -> cerebras.config.toml"
+  if command -v codex >/dev/null 2>&1; then
+    echo "test: codex \"say hi\""
+  fi
+}
+
+cmd_default() {
+  if [[ -L "${CONFIG}" ]]; then
+    local target
+    target="$(basename "$(readlink "${CONFIG}")")"
+    case "${target}" in
+      default.config.toml)
+        echo "config.toml already points at default.config.toml"
+        return 0
+        ;;
+      cerebras.config.toml) : ;;
+      *) die "config.toml is a symlink to '${target}', not managed by these scripts" ;;
+    esac
+  elif [[ -e "${CONFIG}" ]]; then
+    die "config.toml is a regular file, not the managed symlink. Manage it manually."
+  fi
+
+  [[ -e "${DEFAULT_CFG}" ]] || die "no ${DEFAULT_CFG} found (nothing was saved at setup time). Write it manually, then re-run."
+
+  rm -f "${CONFIG}"
+  ln -sfn default.config.toml "${CONFIG}"
+  echo "linked config.toml -> default.config.toml"
+}
+
+cmd_status() {
+  if [[ -L "${CONFIG}" ]]; then
+    echo "config.toml:        symlink -> $(readlink "${CONFIG}")"
+  elif [[ -e "${CONFIG}" ]]; then
+    echo "config.toml:        regular file (not managed by these scripts)"
+  else
+    echo "config.toml:        missing"
+  fi
+  [[ -e "${DEFAULT_CFG}" ]] && echo "default.config.toml: present" || echo "default.config.toml: missing"
+  [[ -e "${PROFILE}" ]]     && echo "cerebras.config.toml: present"    || echo "cerebras.config.toml: missing"
+  return 0
+}
+
+case "${1:-setup}" in
+  setup)   cmd_setup ;;
+  default) cmd_default ;;
+  status)  cmd_status ;;
+  help|-h|--help)
+    cat <<USAGE
+Usage: $0 [setup|default|status]
+  setup    save config.toml as default.config.toml, link config.toml -> cerebras.config.toml
+  default  link config.toml -> default.config.toml (switch back)
+  status   print config state
+Env: CODEX_HOME, BIFROST_BASE_URL, CODEX_MODEL
+USAGE
+    ;;
+  *) printf 'usage: %s [setup|default|status]\n' "$0" >&2; exit 2 ;;
+esac
