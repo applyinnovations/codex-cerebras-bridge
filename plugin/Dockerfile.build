@@ -1,0 +1,40 @@
+# Builds BOTH the Bifrost host binary (DYNAMICALLY linked) and the
+# codex-cerebras-compat plugin .so in one stage, with one Go toolchain,
+# so plugin.Open works in musl containers.
+FROM golang:1.27.0-alpine3.24
+
+ARG VERSION=1.9.0
+
+RUN apk upgrade --no-cache && \
+    apk add --no-cache gcc musl-dev sqlite-dev binutils binutils-gold
+
+ENV CGO_ENABLED=1 GOOS=linux GOWORK=off
+
+WORKDIR /app
+
+# --- Host binary (bifrost HTTP transport), dynamic link: NO -extldflags '-static'
+COPY repo-src/transports /app/transports
+RUN cd /app/transports && \
+    go mod download && \
+    go build \
+      -ldflags="-w -s -X main.Version=v${VERSION}" \
+      -a -trimpath \
+      -tags "sqlite_static" \
+      -o /app/main \
+      ./bifrost-http && \
+    readelf -d /app/main | grep -q NEEDED && \
+    echo "main: dynamically linked OK"
+
+# --- Plugin .so, same toolchain, same core version
+COPY plugin /app/plugin
+RUN cd /app/plugin && \
+    go mod download && \
+    go build \
+      -buildmode=plugin \
+      -trimpath \
+      -o /app/codex-cerebras-compat.so \
+      . && \
+    readelf -d /app/codex-cerebras-compat.so | grep -q NEEDED && \
+    echo "plugin .so: dynamically linked OK"
+
+RUN mkdir -p /out && cp /app/main /app/codex-cerebras-compat.so /out/ && ls -la /out/

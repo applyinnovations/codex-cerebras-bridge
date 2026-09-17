@@ -1,0 +1,66 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+  "client": {
+    "enable_logging": true,
+    "disable_content_logging": false
+  },
+  "providers": {
+    "cerebras": {
+      "keys": [
+        {
+          "name": "cerebras",
+          "value": "env.CEREBRAS_API_KEY",
+          "models": [
+            "*"
+          ],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "max_retries": 5,
+        "retry_backoff_initial": 10000,
+        "retry_backoff_max": 60000
+      },
+      "store_raw_request_response": true
+    }
+  },
+  "config_store": {
+    "enabled": false
+  },
+  "plugins": [
+    {
+      "enabled": true,
+      "name": "codex-cerebras-compat",
+      "path": "/app/codex-cerebras-compat.so",
+      "config": {
+        "models": [
+          {
+            "slug": "cerebras/qwen-3.8-27b",
+            "aliases": [
+              "qwen-3.8-27b"
+            ],
+            "display_name": "Qwen 3.8 27B",
+            "description": "Qwen 3.8 27B served by Cerebras",
+            "context_window": 131072,
+            "effective_context_window_percent": 95,
+            "default_reasoning_level": "xhigh",
+            "supported_reasoning_levels": [
+              {
+                "effort": "low",
+                "description": "Fast reasoning"
+              },
+              {
+                "effort": "medium",
+                "description": "Balanced reasoning"
+              },
+              {
+                "effort": "xhigh",
+                "description": "Deep reasoning"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

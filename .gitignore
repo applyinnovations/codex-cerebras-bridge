@@ -1,0 +1,7 @@
+# secrets - never commit
+env
+.env
+
+# build artifacts
+plugin/codex-cerebras-compat.so
+.build-out/
