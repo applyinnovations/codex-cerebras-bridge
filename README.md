@@ -1,12 +1,12 @@
 # codex-cerebras-bridge
 
-Run [Codex](https://github.com/openai/codex) on **Qwen 3.8 27B** via [Cerebras](https://cerebras.ai), through a local [Bifrost](https://www.getbifrost.ai) gateway.
+Run [Codex](https://github.com/openai/codex) on [Cerebras](https://cerebras.ai) models (**Qwen 3.8 27B**, **GPT-OSS-120B**) through a local [Bifrost](https://www.getbifrost.ai) gateway.
 
 ```
 Codex -> Bifrost :8080 (plugin fixes the request) -> Cerebras
 ```
 
-Codex sends `system`/`developer` messages at any point in `input[]`; Cerebras' Qwen requires exactly one `system` message first. A Go plugin **inside Bifrost** hoists all of those into top-level `instructions` for the configured model only. Everything else passes through untouched.
+Codex sends `system`/`developer` messages at any point in `input[]`; Cerebras requires exactly one `system` message first. A Go plugin **inside Bifrost** hoists all of those into top-level `instructions` for the configured model only. Everything else passes through untouched.
 
 This is a **Bifrost** plugin (a `.so` loaded by Bifrost's `config.json`), not a Codex plugin — Codex only needs to point at the gateway.
 
@@ -37,6 +37,12 @@ That's it.
 ```
 
 Your original `~/.codex/config.toml` is moved (not copied) to `~/.codex/default.config.toml` on first run; both are symlinked from `config.toml` as needed.
+
+Prefer GPT-OSS-120B:
+
+```bash
+CODEX_MODEL=cerebras/gpt-oss-120b ./scripts/onboard.sh codex
+```
 
 No-symlink alternative:
 

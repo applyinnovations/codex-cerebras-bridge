@@ -135,6 +135,31 @@ func defaultConfig() PluginConfig {
 					},
 				},
 			},
+			{
+				Slug: "cerebras/gpt-oss-120b",
+				Aliases: []string{
+					"gpt-oss-120b",
+				},
+				DisplayName:                   "GPT-OSS-120B",
+				Description:                   "GPT-OSS 120B served by Cerebras",
+				ContextWindow:                 131072,
+				EffectiveContextWindowPercent: 95,
+				DefaultReasoningLevel:         "medium",
+				SupportedReasoningLevels: []ReasoningLevel{
+					{
+						Effort:      "low",
+						Description: "Fast reasoning",
+					},
+					{
+						Effort:      "medium",
+						Description: "Balanced reasoning",
+					},
+					{
+						Effort:      "high",
+						Description: "Deep reasoning",
+					},
+				},
+			},
 		},
 	}
 }
@@ -377,7 +402,7 @@ func normalizeResponsesBody(
 	}
 
 	if !isConfiguredModel(requestedModel) {
-		// Only normalize requests for the configured Qwen slugs.
+		// Only normalize requests for the configured slugs.
 		return nil, 0, nil, nil
 	}
 
@@ -672,10 +697,10 @@ func validateModel(model ModelConfig) error {
 		}
 
 		switch effort.Effort {
-		case "low", "medium", "xhigh":
+		case "low", "medium", "high", "xhigh":
 		default:
 			return fmt.Errorf(
-				"unsupported Qwen reasoning effort %q",
+				"unsupported reasoning effort %q",
 				effort.Effort,
 			)
 		}

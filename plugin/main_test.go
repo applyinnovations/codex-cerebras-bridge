@@ -414,6 +414,8 @@ func Test_IsConfiguredModel(t *testing.T) {
 	}{
 		{"cerebras/qwen-3.8-27b", true},
 		{"qwen-3.8-27b", true},
+		{"cerebras/gpt-oss-120b", true},
+		{"gpt-oss-120b", true},
 		{"gpt-4o", false},
 		{"", false},
 		{"other/model", false},
@@ -424,6 +426,73 @@ func Test_IsConfiguredModel(t *testing.T) {
 				t.Fatalf("isConfiguredModel(%q)=%v want %v", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+// --- gpt-oss-120b: hoisting applies to the second configured model ---
+
+func Test_Hoist_GptOss_DeveloperUser(t *testing.T) {
+	body := responsesBody("cerebras/gpt-oss-120b", "",
+		itemText("developer", "oss sys"),
+		itemText("user", "hello oss"),
+	)
+	newBody, hoisted, sc, err := normalizeResponsesBody(body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sc != nil {
+		t.Fatalf("unexpected short-circuit: %d %s", sc.StatusCode, string(sc.Body))
+	}
+	if hoisted != 1 {
+		t.Fatalf("expected 1 hoisted, got %d", hoisted)
+	}
+	m := decodeBody(t, newBody)
+	instr, _ := m["instructions"].(string)
+	if !strings.Contains(instr, "oss sys") {
+		t.Fatalf("instructions missing hoisted dev text: %q", instr)
+	}
+	items := bodyInput(t, m)
+	if got := bodyRoles(items); len(got) != 1 || got[0] != "user" {
+		t.Fatalf("expected [user], got %v", got)
+	}
+	assertNoSystemLater(t, items)
+}
+
+// --- validateModel: high effort accepted, bogus effort rejected --------
+
+func Test_ValidateModel_ReasoningEfforts(t *testing.T) {
+	mk := func(defaultLevel string, efforts ...string) ModelConfig {
+		model := ModelConfig{
+			Slug:                          "cerebras/gpt-oss-120b",
+			DisplayName:                   "GPT-OSS-120B",
+			ContextWindow:                 131072,
+			EffectiveContextWindowPercent: 95,
+			DefaultReasoningLevel:         defaultLevel,
+		}
+		for _, e := range efforts {
+			model.SupportedReasoningLevels = append(
+				model.SupportedReasoningLevels,
+				ReasoningLevel{Effort: e, Description: e},
+			)
+		}
+		return model
+	}
+
+	if err := validateModel(
+		mk("medium", "low", "medium", "high"),
+	); err != nil {
+		t.Fatalf("gpt-oss config (low/medium/high) should validate: %v", err)
+	}
+	if err := validateModel(
+		mk("xhigh", "low", "medium", "xhigh"),
+	); err != nil {
+		t.Fatalf("qwen config (low/medium/xhigh) should validate: %v", err)
+	}
+	if err := validateModel(mk("medium", "low", "banana", "high")); err == nil {
+		t.Fatalf("bogus effort %q should be rejected", "banana")
+	}
+	if err := validateModel(mk("high", "low", "medium")); err == nil {
+		t.Fatal("default level not in supported list should be rejected")
 	}
 }
 
